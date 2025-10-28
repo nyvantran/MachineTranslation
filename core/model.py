@@ -59,6 +59,19 @@ class Transformer(nn.Module):
         output = self.module_layers['prediction_head'](decoder_output)  # (batch_size, tgt_seq_len, output_dim)
         return output
 
+    def transalate(self, src, max_len=50, start_symbol=0, end_symbol=2):
+        # src: (src_seq_len)
+        src = src.unsqueeze(0)  # (1, src_seq_len)
+        outputs = torch.tensor([start_symbol]).unsqueeze(0)
+        lenoutputs = 0
+        while outputs[:, -1] != end_symbol and lenoutputs < max_len:
+            out = self.forward(src, outputs)  # (1, seq_len, output_dim)
+            prob = out[:, -1, :]  # (1, output_dim)
+            _, next_word = torch.max(prob, dim=1)
+            outputs = torch.cat((outputs, next_word.unsqueeze(0)), dim=1)
+            lenoutputs += 1
+        return outputs.squeeze(0)
+
 
 def main():
     x = torch.randint(0, 100000, (32, 10))  # (batch_size, seq_len)
