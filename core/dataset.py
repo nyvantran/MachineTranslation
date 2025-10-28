@@ -30,8 +30,13 @@ class METTDataset(Dataset):
     def __getitem__(self, idx):
         data = self.data[idx]
         en, vie = data["en"], data["vi"]
-        en_encoder = self.tokenizer_eng(en)["input_ids"]
-        vie_encoder = self.tokenizer_vie(vie)["input_ids"]
+        try:
+            en_encoder = self.tokenizer_eng(en)["input_ids"]
+            vie_encoder = self.tokenizer_vie(vie)["input_ids"]
+        except Exception as e:
+            en_encoder = self.tokenizer_eng("")["input_ids"]
+            vie_encoder = self.tokenizer_vie("")["input_ids"]
+            raise e
         return torch.tensor(en_encoder), torch.tensor(vie_encoder)
 
     def get_lenvoacab(self, language='vi'):
@@ -56,11 +61,17 @@ def main():
     dataset = load_dataset('hiimbach/mtet', cache_dir='../datasets')["train"]
     mtet_dataset = METTDataset(data=dataset)
     datatest = mtet_dataset[0]
-    print("datatest", datatest[1])
-    decoder_test = mtet_dataset.decode(datatest[1], language='vi')
-    print("decoder", decoder_test)
-    # print("len vocab eng", mtet_dataset.get_lenvoacab(language='eng'))
-    # print("len vocab vi", mtet_dataset.get_lenvoacab(language='vi'))
+    en, vie = None, None
+    try:
+        en_encoder = mtet_dataset.tokenizer_eng(en)["input_ids"]
+        vie_encoder = mtet_dataset.tokenizer_vie(vie)["input_ids"]
+    except Exception as e:
+        en_encoder = mtet_dataset.tokenizer_eng("")["input_ids"]
+        vie_encoder = mtet_dataset.tokenizer_vie("")["input_ids"]
+        print(e)
+
+    print("en_encoder:", en_encoder)
+    print("vie_encoder:", vie_encoder)
 
 
 if __name__ == "__main__":
