@@ -8,7 +8,7 @@ import json
 import shutil
 
 
-def save_model(model, optimizer, epoch, loss, config, save_dir='checkpoints'):
+def save_model(model, epoch, loss, config, save_dir='checkpoints'):
     """Saves the model and optimizer state to a checkpoint file.
 
     Args:
@@ -24,7 +24,6 @@ def save_model(model, optimizer, epoch, loss, config, save_dir='checkpoints'):
 
     checkpoint = {
         'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
         'epoch': epoch,
         'loss': loss,
         'config': config
@@ -38,7 +37,7 @@ def save_model(model, optimizer, epoch, loss, config, save_dir='checkpoints'):
     logging.info(f'Model saved to {filepath}')
 
 
-def load_model(model, optimizer, filepath):
+def load_model(model, filepath):
     """Loads the model and optimizer state from a checkpoint file.
 
     Args:a
@@ -54,7 +53,6 @@ def load_model(model, optimizer, filepath):
 
     checkpoint = torch.load(filepath)
     model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     epoch = checkpoint['epoch']
     loss = checkpoint['loss']
 

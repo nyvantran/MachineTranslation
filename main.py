@@ -1,5 +1,6 @@
 import torch
 from tqdm import tqdm
+import torchaudio
 
 from torch.utils.data import DataLoader
 from datasets import load_dataset
@@ -25,6 +26,7 @@ def main():
     print("text input:", train_dataset.decode(data0[0].tolist(), language='eng'))
     text = model.transalate(data0[0], max_len=50, start_symbol=0, end_symbol=2)
     print("Translated text:", train_dataset.decode(text.tolist(), language='vi'))
+    torch.nn.Transformer
 
 
 if __name__ == "__main__":

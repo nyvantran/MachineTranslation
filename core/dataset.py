@@ -7,12 +7,13 @@ from transformers import AutoTokenizer
 
 
 class METTDataset(Dataset):
-    def __init__(self, data, tokenizer_eng="bert-base-uncased", tokenizer_vie="vinai/phobert-base"):
+    def __init__(self, data, tokenizer_eng="bert-base-uncased", tokenizer_vie="vinai/phobert-base", max_length=75):
         """
         Args:
             data (list of tuples): Each tuple contains (source_sequence, target_sequence)
         """
         self.data = data
+        self.max_length = max_length
         self.tokenizer_eng = AutoTokenizer.from_pretrained(tokenizer_eng)
         self.tokenizer_vie = AutoTokenizer.from_pretrained(tokenizer_vie)
 
@@ -33,10 +34,12 @@ class METTDataset(Dataset):
         try:
             en_encoder = self.tokenizer_eng(en)["input_ids"]
             vie_encoder = self.tokenizer_vie(vie)["input_ids"]
+            if len(en_encoder) >= self.max_length or len(vie_encoder) >= self.max_length:
+                en_encoder = self.tokenizer_eng("")["input_ids"]
+                vie_encoder = self.tokenizer_vie("")["input_ids"]
         except Exception as e:
             en_encoder = self.tokenizer_eng("")["input_ids"]
             vie_encoder = self.tokenizer_vie("")["input_ids"]
-            raise e
         return torch.tensor(en_encoder), torch.tensor(vie_encoder)
 
     def get_lenvoacab(self, language='vi'):
@@ -61,17 +64,10 @@ def main():
     dataset = load_dataset('hiimbach/mtet', cache_dir='../datasets')["train"]
     mtet_dataset = METTDataset(data=dataset)
     datatest = mtet_dataset[0]
-    en, vie = None, None
-    try:
-        en_encoder = mtet_dataset.tokenizer_eng(en)["input_ids"]
-        vie_encoder = mtet_dataset.tokenizer_vie(vie)["input_ids"]
-    except Exception as e:
-        en_encoder = mtet_dataset.tokenizer_eng("")["input_ids"]
-        vie_encoder = mtet_dataset.tokenizer_vie("")["input_ids"]
-        print(e)
-
-    print("en_encoder:", en_encoder)
-    print("vie_encoder:", vie_encoder)
+    en, vie = datatest[0], datatest[1]
+    print("English:", mtet_dataset.decode(en.tolist(), language='eng'))
+    print("Vietnamese:", mtet_dataset.decode(vie.tolist(), language='vi'))
+    print(len(en), len(vie))
 
 
 if __name__ == "__main__":
