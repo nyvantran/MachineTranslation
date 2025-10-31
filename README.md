@@ -1,0 +1,1 @@
+còn phải sửa hàm loss và hàm train
