@@ -31,15 +31,17 @@ class METTDataset(Dataset):
     def __getitem__(self, idx):
         data = self.data[idx]
         en, vie = data["en"], data["vi"]
+        en_encoder = None
+        vie_encoder = None
         try:
             en_encoder = self.tokenizer_eng(en)["input_ids"]
             vie_encoder = self.tokenizer_vie(vie)["input_ids"]
             if len(en_encoder) >= self.max_length or len(vie_encoder) >= self.max_length:
-                en_encoder = self.tokenizer_eng("")["input_ids"]
-                vie_encoder = self.tokenizer_vie("")["input_ids"]
+                return self.__getitem__(idx - 1)
+
         except Exception as e:
-            en_encoder = self.tokenizer_eng("")["input_ids"]
-            vie_encoder = self.tokenizer_vie("")["input_ids"]
+            if len(en_encoder) >= self.max_length or len(vie_encoder) >= self.max_length:
+                return self.__getitem__(idx - 1)
         return torch.tensor(en_encoder), torch.tensor(vie_encoder)
 
     def get_lenvoacab(self, language='vi'):
@@ -65,9 +67,6 @@ def main():
     mtet_dataset = METTDataset(data=dataset)
     datatest = mtet_dataset[0]
     en, vie = datatest[0], datatest[1]
-    print("English:", mtet_dataset.decode(en.tolist(), language='eng'))
-    print("Vietnamese:", mtet_dataset.decode(vie.tolist(), language='vi'))
-    print(len(en), len(vie))
 
 
 if __name__ == "__main__":

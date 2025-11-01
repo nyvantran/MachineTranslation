@@ -55,7 +55,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.num_heads = num_heads
         self.dmodel = dmodel
-        #
+
         self.MHAttention = MultiHeadAttention(emb_dim=dmodel, num_heads=num_heads)
         self.LayerNorm1 = nn.LayerNorm(dmodel)
         self.Feedforward = Feedforward(dmodel=dmodel)
@@ -71,6 +71,7 @@ class Encoder(nn.Module):
 class Feedforward(nn.Module):
     def __init__(self, dmodel=512):
         super(Feedforward, self).__init__()
+        # d_ffn = 2048
         self.linear1 = nn.Linear(dmodel, dmodel * 2, bias=True)
         self.relu = nn.ReLU()
         self.linear2 = nn.Linear(dmodel * 2, dmodel, bias=True)
@@ -122,7 +123,8 @@ class HeadAttention(nn.Module):
         key = self.key_linear(x)
         value = self.value_linear(x)
         # query, key, value: (batch_size, seq_len, head_dim)
-        scores = torch.matmul(query, key.transpose(-2, -1)) / self.scale.to(query.device)
+        scores = torch.matmul(query, key.transpose(-2, -1)) / self.scale.to(
+            query.device)  # (batch_size, seq_len, seq_len)
         if self.atmask:
             # create mask
             batch_size, seq_len, _ = x.size()
@@ -238,4 +240,25 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    mha_custom = MultiHeadAttention(emb_dim=512, num_heads=4, atmask=True)
+    x = torch.randn((2, 10, 512))
+    mha_pytorch = nn.MultiheadAttention(embed_dim=512, num_heads=4, batch_first=True)
+    for i in range(10):
+        out_custom = mha_custom(x)
+        out_pytorch, _ = mha_pytorch(x, x, x)
+    import time
+    mha_custom.eval()
+    mha_pytorch.eval()
+
+    start = time.time()
+    for _ in range(1000):
+        out_custom = mha_custom(x)
+    end = time.time()
+    print("Custom MHA time:", end - start)
+    start = time.time()
+    for _ in range(1000):
+        out_pytorch, _ = mha_pytorch(x, x, x)
+    end = time.time()
+    print("PyTorch MHA time:", end - start)
+    print("Output difference:", torch.sum(torch.abs(out_custom - out_pytorch)))

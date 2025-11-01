@@ -13,12 +13,14 @@ architecture = {
 
 
 class Transformer(nn.Module):
-    def __init__(self, input_dim, output_dim, emb_dim=512, num_heads=4, num_layers=6):
+    def __init__(self, input_dim, output_dim, emb_dim=512, num_heads=4, num_layers=6, idx_pad=(0, 0)):
         super(Transformer, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
+        self.idx_en_pad = idx_pad[0]
+        self.idx_vi_pad = idx_pad[1]
 
         self.embedding_input = Embedding(input_dim=input_dim, emb_dim=emb_dim)
         self.embedding_output = Embedding(input_dim=output_dim, emb_dim=emb_dim)
@@ -42,6 +44,7 @@ class Transformer(nn.Module):
     def forward(self, src, tgt):
         # src: (batch_size, src_seq_len)
         # tgt: (batch_size, tgt_seq_len)
+        mask = None  # Placeholder for future mask implementation
         src_emb = self.embedding_input(src)  # (batch_size, src_seq_len, emb_dim)
         tgt_emb = self.embedding_output(tgt)  # (batch_size, tgt_seq_len, emb_dim)
 
