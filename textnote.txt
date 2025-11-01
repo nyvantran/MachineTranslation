@@ -1,0 +1,10 @@
+còn phải sửa
+function
+    loss
+    train
+class sửa class trước
+    model
+        forward: thêm mark để mô hình ko quan tâm tới các pading
+    dataset
+        __getitem__: nếu các dữ liệu quá dài hoặc sai sót thì trả về dữ liệu gần nhất có độ dài phù hợp
+

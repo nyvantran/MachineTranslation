@@ -9,7 +9,6 @@ import time
 from typing import Optional, Tuple
 import gc
 
-
 # ==================== MODEL ARCHITECTURE ====================
 class TransformerTranslation(nn.Module):
     def __init__(
@@ -64,7 +63,7 @@ class TransformerTranslation(nn.Module):
             tgt_key_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
 
-        # Embeddings
+        # Embeddings - test
         src_emb = self.pos_encoding(self.src_embedding(src) * math.sqrt(self.d_model))
         tgt_emb = self.pos_encoding(self.tgt_embedding(tgt) * math.sqrt(self.d_model))
 
