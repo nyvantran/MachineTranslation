@@ -1,3 +1,6 @@
 /.idea
+/old_core/__pycache__
 /core/__pycache__
 /datasets
+/utils/__pycache__
+/temp/__pycache__

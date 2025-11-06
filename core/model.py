@@ -1,92 +1,124 @@
 import torch
 import torch.nn as nn
-from core.common import Embedding, Encoder, Decoder, PredictionHead
-
-architecture = {
-    "transformer": {
-        'embedding': {'input_dim': 100000, 'emb_dim': 512},
-        'encoder': {'dmodel': 512, 'num_heads': 4, 'num_layers': 6},
-        'decoder': {'dmodel': 512, 'num_heads': 4, 'num_layers': 6},
-        'output_layer': {'output_dim': 100000}
-    }
-}
+import torch.utils.checkpoint
+from core.common import Encoder, Decoder, Embedding
 
 
 class Transformer(nn.Module):
-    def __init__(self, input_dim, output_dim, emb_dim=512, num_heads=4, num_layers=6, idx_pad=(0, 0)):
+    """
+       Optimized Transformer với:
+       - Pre-LayerNorm
+       - Optimized components
+       - Proper masking
+       - Gradient checkpointing support
+       - Mixed precision support
+       """
+
+    def __init__(self,
+                 src_vocab_size,
+                 tgt_vocab_size,
+                 d_model=512,
+                 num_heads=8,
+                 num_encoder_layers=6,
+                 num_decoder_layers=6,
+                 d_ff=2048,
+                 dropout=0.1,
+                 max_seq_len=5000,
+                 pad_idx=0,
+                 use_gradient_checkpointing=False):
+        """
+        Khởi tạo mô hình Transformer
+            Args:
+                src_vocab_size (int): Kích thước từ vựng nguồn
+                tgt_vocab_size (int): Kích thước từ vựng đích
+                d_model (int): Kích thước embedding và mô hình
+                num_heads (int): Số lượng đầu attention
+                num_encoder_layers (int): Số lớp encoder
+                num_decoder_layers (int): Số lớp decoder
+                d_ff (int): Kích thước của feed-forward layer
+                dropout (float): Tỷ lệ dropout
+                max_seq_len (int): Độ dài tối đa của chuỗi
+                pad_idx (int): Chỉ số padding trong từ vựng
+                use_gradient_checkpointing (bool): Sử dụng gradient checkpointing để tiết kiệm bộ nhớ
+        """
         super(Transformer, self).__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.idx_en_pad = idx_pad[0]
-        self.idx_vi_pad = idx_pad[1]
+        # prame init
+        self.d_model = d_model
+        self.pad_idx = pad_idx
+        self.use_gradient_checkpointing = use_gradient_checkpointing
 
-        self.embedding_input = Embedding(input_dim=input_dim, emb_dim=emb_dim)
-        self.embedding_output = Embedding(input_dim=output_dim, emb_dim=emb_dim)
-        self.module_layers = nn.ModuleDict()
-        self.setup_module()
+        # embedding
+        self.src_embedding = Embedding(src_vocab_size, d_model, max_seq_len, dropout)
+        self.tgt_embedding = Embedding(tgt_vocab_size, d_model, max_seq_len, dropout)
+        # encoder
+        self.encoder = nn.ModuleList([
+            Encoder(d_model, num_heads, d_ff, dropout)
+            for _ in range(num_encoder_layers)
+        ])
+        self.encoder_norm = nn.LayerNorm(d_model)
+        # decoder
+        self.decoder = nn.ModuleList([
+            Decoder(d_model, num_heads, d_ff, dropout)
+            for _ in range(num_decoder_layers)
+        ])
+        self.decoder_norm = nn.LayerNorm(d_model)
+        # prediction head
+        self.output_layer = nn.Linear(d_model, tgt_vocab_size, bias=False)
+        self.output_layer.weight = self.tgt_embedding.token_emb.weight
+        # reset parameters
+        self._reset_parameters()
 
-    def setup_module(self):
-        # setup encoder layers
-        encoder_layers = nn.ModuleList()
-        for _ in range(self.num_layers):
-            encoder_layers.append(Encoder(dmodel=512, num_heads=self.num_heads))
-        self.module_layers['encoder'] = encoder_layers
-        # setup decoder layers
-        decoder_layers = nn.ModuleList()
-        for _ in range(self.num_layers):
-            decoder_layers.append(Decoder(dmodel=512, num_heads=self.num_heads))
-        self.module_layers['decoder'] = decoder_layers
-        # setup prediction head
-        self.module_layers['prediction_head'] = PredictionHead(dmodel=512, output_dim=self.output_dim)
+    def _reset_parameters(self):
+        """Initialize parameters"""
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
-    def forward(self, src, tgt):
-        # src: (batch_size, src_seq_len)
-        # tgt: (batch_size, tgt_seq_len)
-        mask = None  # Placeholder for future mask implementation
-        src_emb = self.embedding_input(src)  # (batch_size, src_seq_len, emb_dim)
-        tgt_emb = self.embedding_output(tgt)  # (batch_size, tgt_seq_len, emb_dim)
+    def forward(self, src, tgt, mask_src=None, mask_tgt=None):
+        if mask_src is None:
+            mask_src = self.make_src_mask(src)
+        if mask_tgt is None:
+            mask_tgt = self.make_tgt_mask(tgt)
+        # src: (batch_size, src_len)
+        pass
 
-        # Encoder
-        encoder_output = src_emb
-        for layer in self.module_layers['encoder']:
-            encoder_output = layer(encoder_output)
+    def encode(self, src, mask_src=None):
+        """Encode source sequence"""
+        # src: (batch_size, src_len)
+        # mask_src: (batch_size, 1, 1, src_len)
+        src = self.src_embedding(src)  # (batch_size, src_len, d_model)
+        for layer in self.encoder:
+            if self.use_gradient_checkpointing:
+                src = torch.utils.checkpoint.checkpoint(layer, src, mask_src)  # No tgt for encoder
+            else:
+                src = layer(src, mask_src)
+        src = self.encoder_norm(src)
+        return src
 
-        # Decoder
-        decoder_output = tgt_emb
-        for layer in self.module_layers['decoder']:
-            decoder_output = layer(decoder_output, encoder_output)
-
-        # Prediction Head
-        output = self.module_layers['prediction_head'](decoder_output)  # (batch_size, tgt_seq_len, output_dim)
+    def decode(self, tgt, enc_src, mask_tgt=None, mask_src=None):
+        """Decode target sequence"""
+        # tgt: (batch_size, tgt_len)
+        # enc_src: (batch_size, src_len, d_model)
+        # mask_tgt: (batch_size, 1, tgt_len, tgt_len)
+        # mask_src: (batch_size, 1, 1, src_len)
+        tgt = self.tgt_embedding(tgt)  # (batch_size, tgt_len, d_model)
+        for layer in self.decoder:
+            if self.use_gradient_checkpointing:
+                tgt = torch.utils.checkpoint.checkpoint(layer, tgt, enc_src, mask_tgt, mask_src)
+            else:
+                tgt = layer(tgt, enc_src, mask_tgt, mask_src)
+        tgt = self.decoder_norm(tgt)
+        output = self.output_layer(tgt)  # (batch_size, tgt_len, tgt_vocab_size)
         return output
 
-    def transalate(self, src, max_len=50, start_symbol=0, end_symbol=2):
-        # src: (src_seq_len)
-        src = src.unsqueeze(0)  # (1, src_seq_len)
-        outputs = torch.tensor([start_symbol]).unsqueeze(0)
-        lenoutputs = 0
-        while outputs[:, -1] != end_symbol and lenoutputs < max_len:
-            out = self.forward(src, outputs)  # (1, seq_len, output_dim)
-            prob = out[:, -1, :]  # (1, output_dim)
-            _, next_word = torch.max(prob, dim=1)
-            outputs = torch.cat((outputs, next_word.unsqueeze(0)), dim=1)
-            lenoutputs += 1
-        return outputs.squeeze(0)
+    def make_src_mask(self, src):
+        """Create source padding mask"""
+        # src: (batch_size, src_len)
+        src_mask = (src == self.pad_idx)
+        return src_mask
 
-
-def main():
-    from torchviz import make_dot
-    x = torch.randint(0, 100000, (32, 10))  # (batch_size, seq_len)
-    y = torch.randint(0, 100000, (32, 12))  # (batch_size, seq_len)
-    model = Transformer(input_dim=100000, output_dim=100000, emb_dim=512, num_heads=4, num_layers=6)
-    output = model(x, y)
-    loss = output.sum()
-
-    dot = make_dot(loss, params=dict(model.named_parameters()))
-    dot.render("linear_cuda_graph", format="png")
-
-
-if __name__ == "__main__":
-    main()
+    def make_tgt_mask(self, tgt):
+        """Create target padding mask"""
+        # tgt: (batch_size, tgt_len)
+        tgt_mask = (tgt == self.pad_idx)
+        return tgt_mask

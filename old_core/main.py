@@ -6,18 +6,18 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 
 import utils.load_save_model as load_save_model
-from core.config import *
-from core.model import Transformer
-from core.dataset import METTDataset, collate_fn
+from old_core.config import *
+from old_core.model import Transformer
+from old_core.dataset import METTDataset, collate_fn
 from torchviz import make_dot
 
 
-# from core.loss import CrossEntropyLoss
+# from old_core.loss import CrossEntropyLoss
 
 def main():
     pre_data = load_dataset('hiimbach/mtet', cache_dir='../datasets')
     train_dataset = METTDataset(data=pre_data['train'])
-    # test_dataset = METTDataset(data=pre_data['test'])
+    # test_dataset = METTDataset(data=pre_data['temp'])
     model = Transformer(
         input_dim=train_dataset.get_lenvoacab(language='eng'),
         output_dim=train_dataset.get_lenvoacab(language='vi'),

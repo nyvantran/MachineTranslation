@@ -1,5 +1,5 @@
 import torch
-from core.model import Transformer
+from old_core.model import Transformer
 import os
 import logging
 import datetime
