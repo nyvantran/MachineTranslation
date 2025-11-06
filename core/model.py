@@ -77,11 +77,15 @@ class Transformer(nn.Module):
 
 
 def main():
+    from torchviz import make_dot
     x = torch.randint(0, 100000, (32, 10))  # (batch_size, seq_len)
     y = torch.randint(0, 100000, (32, 12))  # (batch_size, seq_len)
     model = Transformer(input_dim=100000, output_dim=100000, emb_dim=512, num_heads=4, num_layers=6)
     output = model(x, y)
-    print("output", output.shape)  # expected output: (32, 12, 100000)
+    loss = output.sum()
+
+    dot = make_dot(loss, params=dict(model.named_parameters()))
+    dot.render("linear_cuda_graph", format="png")
 
 
 if __name__ == "__main__":

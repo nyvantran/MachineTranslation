@@ -72,9 +72,9 @@ class Feedforward(nn.Module):
     def __init__(self, dmodel=512):
         super(Feedforward, self).__init__()
         # d_ffn = 2048
-        self.linear1 = nn.Linear(dmodel, dmodel * 2, bias=True)
+        self.linear1 = nn.Linear(dmodel, dmodel * 2, )
         self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(dmodel * 2, dmodel, bias=True)
+        self.linear2 = nn.Linear(dmodel * 2, dmodel)
 
     def forward(self, x):
         linear1 = self.linear1(x)
@@ -111,9 +111,9 @@ class HeadAttention(nn.Module):
         self.head_dim = head_dim
         self.atmask = atmask
 
-        self.query_linear = nn.Linear(emb_dim, head_dim)
-        self.key_linear = nn.Linear(emb_dim, head_dim)
-        self.value_linear = nn.Linear(emb_dim, head_dim)
+        self.query_linear = nn.Linear(emb_dim, head_dim, bias=False)
+        self.key_linear = nn.Linear(emb_dim, head_dim, bias=False)
+        self.value_linear = nn.Linear(emb_dim, head_dim, bias=False)
         self.scale = torch.sqrt(torch.FloatTensor([head_dim]))
         self.softmax = nn.Softmax(dim=-1)
 
@@ -180,9 +180,9 @@ class crossAttention(nn.Module):
         self.emb_dim = emb_dim
         self.head_dim = head_dim
 
-        self.query_linear = nn.Linear(emb_dim, head_dim)
-        self.key_linear = nn.Linear(emb_dim, head_dim)
-        self.value_linear = nn.Linear(emb_dim, head_dim)
+        self.query_linear = nn.Linear(emb_dim, head_dim, bias=False)
+        self.key_linear = nn.Linear(emb_dim, head_dim, bias=False)
+        self.value_linear = nn.Linear(emb_dim, head_dim, bias=False)
         self.scale = torch.sqrt(torch.FloatTensor([head_dim]))
         self.softmax = nn.Softmax(dim=-1)
 
@@ -208,7 +208,7 @@ class CrossMultiHeadAttention(nn.Module):
         self.head_dim = emb_dim // num_heads if emb_dim % num_heads == 0 else emb_dim // (num_heads - 1)
         self.heads = nn.ModuleList(
             [crossAttention(self.emb_dim, self.head_dim) for _ in range(num_heads)])
-        self.combo_linear = nn.Linear(self.head_dim * num_heads, emb_dim)
+        self.combo_linear = nn.Linear(self.head_dim * num_heads, emb_dim, bias=False)
 
     def forward(self, x, y):
         # x: query (batch_size, seq_len_query, emb_dim)
@@ -223,7 +223,7 @@ class CrossMultiHeadAttention(nn.Module):
 class PredictionHead(nn.Module):
     def __init__(self, dmodel=512, output_dim=1000):
         super(PredictionHead, self).__init__()
-        self.linear = nn.Linear(dmodel, output_dim)
+        self.linear = nn.Linear(dmodel, output_dim, bias=False)
 
     def forward(self, x):
         # x: (batch_size, seq_len, dmodel)
@@ -248,6 +248,7 @@ if __name__ == "__main__":
         out_custom = mha_custom(x)
         out_pytorch, _ = mha_pytorch(x, x, x)
     import time
+
     mha_custom.eval()
     mha_pytorch.eval()
 

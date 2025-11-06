@@ -14,6 +14,7 @@ from core.dataset import METTDataset, collate_fn
 from core.loss import CrossEntropyLoss
 
 
+
 def train_model(model, dataloader, optimizer, loss_fn, epoch, scaler):
     model.train()
     toal_loss = 0.0
@@ -23,6 +24,7 @@ def train_model(model, dataloader, optimizer, loss_fn, epoch, scaler):
         x, y = x.to(DEVICES), y.to(DEVICES)
         with autocast(enabled=USE_AMP):
             outputs = model(x, y)
+
             loss = loss_fn(outputs, y)
             loss /= ACCUMULATION_STEPS
 
@@ -72,11 +74,11 @@ def main():
         collate_fn=collate_fn
     )
     print("Start training...")
-    loop = tqdm(train_loader)
-    for idx, (x, y, length) in enumerate(loop):
-        print(train_dataset.decode(x[0].tolist(), language='eng'))
-        print(train_dataset.decode(y[0].tolist(), language='vi'))
-        break
+    # loop = tqdm(train_loader)
+    # for idx, (x, y, length) in enumerate(loop):
+    #     print(train_dataset.decode(x[0].tolist(), language='eng'))
+    #     print(train_dataset.decode(y[0].tolist(), language='vi'))
+    #     break
     # test_loader = DataLoader(
     #     test_dataset,
     #     batch_size=BATCH_SIZE,
@@ -93,16 +95,16 @@ def main():
     # for p in model.parameters():
     #     p.register_post_accumulate_grad_hook(optimizer_hook)
 
-    # loss_fn = CrossEntropyLoss(smoothing=SMOOTHING)
-    # scaler = GradScaler(enabled=USE_AMP)
-    # for epoch in range(EPOCHS):
-    #     train_loss = train_model(model, train_loader, optimizer, loss_fn, epoch, scaler)
-    #     print(f"Epoch {epoch + 1}/{EPOCHS}, Train Loss: {train_loss:.4f}")
-    #     if (epoch + 1) % 5 == 0:
-    #         load_save_model.save_model(model, epoch, train_loss, {},
-    #                                    f'transformer_epoch{epoch + 1}.pt')
-    #     torch.cuda.empty_cache()
-    #     gc.collect()
+    loss_fn = CrossEntropyLoss(smoothing=SMOOTHING)
+    scaler = GradScaler(enabled=USE_AMP)
+    for epoch in range(EPOCHS):
+        train_loss = train_model(model, train_loader, optimizer, loss_fn, epoch, scaler)
+        print(f"Epoch {epoch + 1}/{EPOCHS}, Train Loss: {train_loss:.4f}")
+        if (epoch + 1) % 5 == 0:
+            load_save_model.save_model(model, epoch, train_loss, {},
+                                       f'transformer_epoch{epoch + 1}.pt')
+        torch.cuda.empty_cache()
+        gc.collect()
 
 
 if __name__ == '__main__':
