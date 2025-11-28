@@ -20,7 +20,7 @@ class MultiHeadAttention(nn.Module):
             dropout: Tỷ lệ dropout
             at_mask: Nếu True, sử dụng causal mask (dùng cho decoder)
         """
-        super(MultiHeadAttention).__init__()
+        super(MultiHeadAttention, self).__init__()
         assert emb_dim % num_heads == 0, "emb_dim must be divisible by num_heads"
 
         self.emb_dim = emb_dim
@@ -53,6 +53,7 @@ class MultiHeadAttention(nn.Module):
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=self.at_mask
             )  # (batch_size, num_heads, seq_len, head_dim)
+        #      bx = 2 yêu cầu phải có mask dạng (batch_size, seq_len, seq_len)
         else:
             # Fallback to manual implementation
             scale = 1.0 / math.sqrt(self.head_dim)
@@ -215,7 +216,7 @@ class CrossAttention(nn.Module):
         Args:
             query: (batch_size, seq_len_q, emb_dim) - from decoder
             key_value: (batch_size, seq_len_kv, emb_dim) - from encoder
-            attn_mask: (seq_len_q, seq_len_kv) or (batch_size, seq_len_q, seq_len_kv) khi evn có PyTorch 2.0+
+            attn_mask:  (seq_len_q, seq_len_kv) or (batch_size, seq_len_q, seq_len_kv) khi evn có PyTorch 2.0+
             key_padding_mask: (batch_size, seq_len_kv) - True for positions to ignore khi evn có PyTorch < 2.0
         Returns:
             (batch_size, seq_len_q, emb_dim)
@@ -321,25 +322,6 @@ class Encoder(nn.Module):
         return x
 
 
-# define module structures of Decoder block
-#  diagram of Decoder block
-#  Decoder
-#  ├────────────────────────────────┐
-#  ├───Masked Multi-Head Attention  │
-#  │   └───Head Attention x 4       │
-#  ├ + <────────────────────────────┘
-#  │
-#  ├───nn.LayerNorm
-#  ├────────────────────────────────┐
-#  ├───Cross-Attention              │
-#  │   └───Head Attention x 4       │
-#  ├ + <────────────────────────────┘
-#  │
-#  ├───nn.LayerNorm
-#  ├────────────────────────────────┐
-#  ├───Feedforward                  │
-#  ├ + <────────────────────────────┘
-#  └───nn.LayerNorm
 class Decoder(nn.Module):
     """
     Decoder block gồm:
@@ -383,7 +365,7 @@ class Decoder(nn.Module):
         self.norm3 = nn.LayerNorm(dmodel)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, enc_output, src_mask=None, tgt_mask=None):
+    def forward(self, x, enc_output, tgt_mask=None, src_mask=None):
         """
         Args:
             X: (batch_size, tgt_seq_len, dmodel) - input tensor to decoder
@@ -394,7 +376,7 @@ class Decoder(nn.Module):
             (batch_size, tgt_seq_len, dmodel)
         """
         # Masked Multi-Head Attention with Residual Connection
-        attn_output = self.mha(x, mask=src_mask)  # multi-head self-attention
+        attn_output = self.mha(x, mask=tgt_mask)  # multi-head self-attention
         x = x + self.dropout(attn_output)  # residual connection
         x = self.norm1(x)
 
@@ -410,3 +392,21 @@ class Decoder(nn.Module):
         x = self.norm3(x)
 
         return x
+
+
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    src_vocab_size = 1000
+    tgt_vocab_size = 1000
+    x = torch.randint(0, src_vocab_size, (3, 4)).to(device)
+    embedding = Embedding(vocab_size=src_vocab_size, emb_dim=512).to(device)
+    out = embedding(x)
+    print("Embedding output shape:", out.shape)  # Expected: (3, 4
+    pre_head = nn.Linear(512, tgt_vocab_size, bias=False)
+    pre_head.weight = embedding.token_emb.weight
+    logits = pre_head(out)
+    print("Logits shape:", logits.shape)  # Expected: (3, 4, 1000)
+
+
+if __name__ == "__main__":
+    main()

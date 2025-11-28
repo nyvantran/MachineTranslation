@@ -1,111 +1,112 @@
-import torch
 import gc
 
-from torch.cuda.amp import autocast, GradScaler
+import torch
+import logging
+import warnings
+
+from nltk.corpus.reader import mte
+
+import core.config as config
+
+from datasets import load_dataset
+from torch.utils.data import DataLoader
+from torch.optim import AdamW
 from tqdm import tqdm
 
-from torch.utils.data import DataLoader
-from datasets import load_dataset
+from core.model import Transformer
+from core.dataset import METTDataset, collate_fn
+from core.loss import CrossEntropyLoss
 
-import utils.load_save_model as load_save_model
-from old_core.config import *
-from old_core.model import Transformer
-from old_core.dataset import METTDataset, collate_fn
-from old_core.loss import CrossEntropyLoss
+# configure logging
+warnings.filterwarnings("ignore", category=UserWarning, message=".*torch.utils.checkpoint:*")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('training.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
+def train(ct_model, loss, train_loader, optimizer, device, epoch=None):
+    ct_model.train()
+    total_loss = 0.0
+    loop = tqdm(train_loader, desc=f"Epoch {epoch}" if epoch is not None else "Training")
+    for idx, batch in enumerate(loop):
+        en_input_ids = batch['en_input_ids'].to(device)
+        vi_input_ids = batch['vi_input_ids'].to(device)
 
-def train_model(model, dataloader, optimizer, loss_fn, epoch, scaler):
-    model.train()
-    toal_loss = 0.0
-    optimizer.zero_grad()
-    loop = tqdm(dataloader, total=len(dataloader), desc="Training")
-    for idx, (x, y, length) in enumerate(loop):
-        x, y = x.to(DEVICES), y.to(DEVICES)
-        with autocast(enabled=USE_AMP):
-            outputs = model(x, y)
+        optimizer.zero_grad()
 
-            loss = loss_fn(outputs, y)
-            loss /= ACCUMULATION_STEPS
+        outputs = ct_model(
+            src=en_input_ids,
+            tgt=vi_input_ids
+        )
 
-        if USE_AMP:
-            scaler.scale(loss).backward()  # Scale loss trước khi backward
-        else:
-            loss.backward()
+        loss_value = loss(
+            predict=outputs,
+            target=vi_input_ids
+        )
 
-        if ((idx + 1) % ACCUMULATION_STEPS == 0) or (idx + 1 == len(dataloader)):
-            if USE_AMP:
-                scaler.unscale_(optimizer)  # Unscale gradients trước khi clipping
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
-                optimizer.step()
-            optimizer.zero_grad()
-        toal_loss += loss.item() * ACCUMULATION_STEPS
+        loss_value.backward()
+        optimizer.step()
 
-        if (idx + 1) % 100 == 0:
-            loop.set_postfix(epoch=epoch + 1, loss=toal_loss / (idx + 1), batch_idx=idx + 1)
+        total_loss += loss_value.item()
+        if (idx + 1) % 10 == 0:
+            loop.set_postfix(epoch=epoch, loss=total_loss / (idx + 1), idx=idx)
 
         if idx % 25 == 0:
             torch.cuda.empty_cache()
             gc.collect()
-    return toal_loss / len(dataloader)
+
+    avg_loss = total_loss / len(train_loader)
+    return avg_loss
 
 
 def main():
-    pre_data = load_dataset('hiimbach/mtet', cache_dir='datasets')
-    train_dataset = METTDataset(data=pre_data['train'])
-    # test_dataset = METTDataset(data=pre_data['temp'])
-    model = Transformer(
-        input_dim=train_dataset.get_lenvoacab(language='eng'),
-        output_dim=train_dataset.get_lenvoacab(language='vi'),
-        emb_dim=512,
-    ).to(DEVICES)
-    print(DEVICES)
-
+    dataset = load_dataset('hiimbach/mtet', cache_dir="/datasets")["train"]
+    mtet_dataset = METTDataset(dataset, cache_dir="./cache", max_length=config.MAX_LEN, use_cache=True)
+    pad_idx = (mtet_dataset.tokenizer_eng.pad_token_id, mtet_dataset.tokenizer_vie.pad_token_id)
     train_loader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        pin_memory=True,
+        mtet_dataset,
+        batch_size=config.BATCH_SIZE,
         shuffle=True,
-        drop_last=True,
-        collate_fn=collate_fn
+        # num_workers=config.NUM_WORKERS,
+        collate_fn=lambda x: collate_fn(x, pad_idx_eng=pad_idx[0], pad_idx_vie=pad_idx[1])
     )
-    print("Start training...")
-    # loop = tqdm(train_loader)
-    # for idx, (x, y, length) in enumerate(loop):
-    #     print(train_dataset.decode(x[0].tolist(), language='eng'))
-    #     print(train_dataset.decode(y[0].tolist(), language='vi'))
-    #     break
-    # test_loader = DataLoader(
-    #     test_dataset,
-    #     batch_size=BATCH_SIZE,
-    #     shuffle=False,
-    #     drop_last=False
-    # )
-    optimizer = torch.optim.Adam(model.parameters())
-    # optimizer_dict = {p: torch.optim.Adam([p], foreach=False) for p in model.parameters()}
+    print("device:", config.DEVICES)
+    model = Transformer(
+        src_vocab_size=mtet_dataset.get_vocab_size(language='eng'),
+        tgt_vocab_size=mtet_dataset.get_vocab_size(language='vi'),
+        d_model=512,
+        num_heads=8,
+        num_encoder_layers=6,
+        num_decoder_layers=6,
+        d_ff=2048,
+        max_seq_len=config.MAX_LEN,
+        dropout=0.1,
+        use_gradient_checkpointing=True,
+        pad_idx=pad_idx
+    )
+    model.to(config.DEVICES)
+    criterion = CrossEntropyLoss(
+        vocab_size=mtet_dataset.get_vocab_size(language='vi'),
+        label_smoothing=config.SMOOTHING,
+        pad_idx=pad_idx[1],
+    )
+    optimizer = AdamW(model.parameters(), lr=config.LEARNING_RATE)
+    for epoch in range(1, config.EPOCHS + 1):
+        avg_loss = train(model, criterion, train_loader, optimizer, config.DEVICES, epoch)
+        logger.info(f"Epoch [{epoch}/{config.EPOCHS}], Loss: {avg_loss:.4f}")
+        if epoch % 5 == 0:
+            torch.save(model.state_dict(), f"transformer_epoch_{epoch}.pth")
 
-    # def optimizer_hook(parameter) -> None:
-    #     optimizer_dict[parameter].step()
-    #     optimizer_dict[parameter].zero_grad()
-    #
-    # for p in model.parameters():
-    #     p.register_post_accumulate_grad_hook(optimizer_hook)
-
-    loss_fn = CrossEntropyLoss(smoothing=SMOOTHING)
-    scaler = GradScaler(enabled=USE_AMP)
-    for epoch in range(EPOCHS):
-        train_loss = train_model(model, train_loader, optimizer, loss_fn, epoch, scaler)
-        print(f"Epoch {epoch + 1}/{EPOCHS}, Train Loss: {train_loss:.4f}")
-        if (epoch + 1) % 5 == 0:
-            load_save_model.save_model(model, epoch, train_loss, {},
-                                       f'transformer_epoch{epoch + 1}.pt')
         torch.cuda.empty_cache()
         gc.collect()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
